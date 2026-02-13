@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>가족 포토부스</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #020617; color: white; touch-action: none; min-height: 100vh; display: flex; flex-direction: column; }
+        .shutter-flash { animation: flash 0.4s ease-out; }
+        @keyframes flash {
+            0% { background: white; opacity: 1; }
+            100% { background: transparent; opacity: 0; }
+        }
+        .effect-card {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            filter: brightness(0.6);
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+        }
+        .effect-card:hover { filter: brightness(1); background-color: #1e293b; }
+        .effect-card.active { 
+            background-color: #2563eb;
+            filter: brightness(1);
+            box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+        }
+        canvas { 
+            border-radius: 1rem; 
+            width: 100%; 
+            height: auto; 
+            max-height: 72vh;
+            object-fit: contain; 
+            background: #000;
+        }
+        .effect-label { 
+            font-size: 1rem; 
+            font-weight: 800; 
+            text-align: center; 
+            color: #cbd5e1;
+            letter-spacing: -0.025em;
+        }
+        .active .effect-label { color: #ffffff; }
+    </style>
+</head>
+<body class="p-2 md:p-4">
+
+    <!-- 메인 화면 -->
+    <main class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
+        <div id="flash-overlay" class="absolute inset-0 z-50 pointer-events-none rounded-xl"></div>
+        
+        <div id="setup-view" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md rounded-xl p-6 text-center">
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-500 px-12 py-4 rounded-full font-bold text-white transition-all active:scale-95">
+                카메라 시작하기
+            </button>
+            <p id="error-log" class="text-red-400 mt-4 text-sm hidden"></p>
+        </div>
+
+        <canvas id="gl-canvas"></canvas>
+        
+        <!-- 촬영 버튼 -->
+        <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+            <button id="snap-btn" class="bg-white text-slate-900 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-75 disabled:opacity-10" disabled>
+                <div class="w-12 h-12 rounded-full border-2 border-slate-900"></div>
+            </button>
+        </div>
+        <div id="countdown" class="hidden text-[12rem] font-black text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl z-30"></div>
+    </main>
+
+    <!-- 20가지 효과 그리드 -->
+    <section class="w-full max-w-5xl mx-auto mt-6 mb-8">
+        <div id="effect-list" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+            <!-- 효과 버튼들이 여기에 생성됩니다 -->
+        </div>
+    </section>
+
+    <video id="video" class="hidden" autoplay playsinline muted></video>
+
+    <script>
+        const canvas = document.getElementById('gl-canvas');
+        const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+        const video = document.getElementById('video');
+        const effectList = document.getElementById('effect-list');
+        const snapBtn = document.getElementById('snap-btn');
+        const startBtn = document.getElementById('start-btn');
+        const setupView = document.getElementById('setup-view');
+        const countdownEl = document.getElementById('countdown');
+
+        const vsSource = `
+            attribute vec4 aPosition;
+            attribute vec2 aTexCoord;
+            varying vec2 vTexCoord;
+            void main() { gl_Position = aPosition; vTexCoord = aTexCoord; }
+        `;
+
+        const fsHeader = `
+            precision mediump float;
+            varying vec2 vTexCoord;
+            uniform sampler2D uSampler;
+            uniform float uTime;
+            uniform vec2 uResolution;
+        `;
+
+        const effects = [
+            { id: 'normal', name: '원본' },
+            { id: 'bulge', name: '대왕 코', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    vec2 center = vec2(0.5, 0.5);
+                    vec2 dist = uv - center;
+                    float r = length(dist);
+                    if (r < 0.5) uv = center + dist * (1.0 - 0.7 * (1.0 - pow(r/0.5, 2.0)));
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'pinch', name: '홀쭉이', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    vec2 center = vec2(0.5, 0.5);
+                    vec2 dist = uv - center;
+                    float r = length(dist);
+                    if (r < 0.5) uv = center + normalize(dist) * pow(r/0.5, 1.5) * 0.5;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'twirl', name: '뱅글뱅글', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    vec2 center = vec2(0.5, 0.5);
+                    vec2 dist = uv - center;
+                    float r = length(dist);
+                    float angle = atan(dist.y, dist.x) + (0.5 - r) * 8.0;
+                    if (r < 0.5) uv = center + vec2(cos(angle), sin(angle)) * r;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'quad', name: '4개 얼굴', fs: `
+                void main() {
+                    vec2 uv = mod(vTexCoord * 2.0, 1.0);
+                    if (vTexCoord.x > 0.5) uv.x = 1.0 - uv.x;
+                    if (vTexCoord.y > 0.5) uv.y = 1.0 - uv.y;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'kaleido', name: '만화경', fs: `
+                void main() {
+                    vec2 uv = vTexCoord - 0.5;
+                    float a = atan(uv.y, uv.x);
+                    float r = length(uv);
+                    a = mod(a, 3.14159 / 3.0);
+                    a = abs(a - 3.14159 / 6.0);
+                    uv = vec2(cos(a), sin(a)) * r + 0.5;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'pixel', name: '게임세상', fs: `
+                void main() {
+                    vec2 uv = floor(vTexCoord * 40.0) / 40.0;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'thermal', name: '열감지기', fs: `
+                void main() {
+                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
+                    float l = dot(col, vec3(0.3, 0.59, 0.11));
+                    vec3 res = mix(vec3(0,0,1), vec3(1,1,0), l);
+                    res = mix(res, vec3(1,0,0), smoothstep(0.5, 1.0, l));
+                    gl_FragColor = vec4(res, 1.0);
+                }
+            ` },
+            { id: 'glitch', name: '지직지직', fs: `
+                void main() {
+                    float g = sin(uTime * 30.0) * 0.015;
+                    float r = texture2D(uSampler, vTexCoord + vec2(g, 0)).r;
+                    float b = texture2D(uSampler, vTexCoord - vec2(g, 0)).b;
+                    gl_FragColor = vec4(r, texture2D(uSampler, vTexCoord).g, b, 1.0);
+                }
+            ` },
+            { id: 'sketch', name: '그림처럼', fs: `
+                void main() {
+                    vec2 off = 1.0 / uResolution;
+                    vec3 c = texture2D(uSampler, vTexCoord).rgb;
+                    vec3 r = texture2D(uSampler, vTexCoord + vec2(off.x, 0)).rgb;
+                    vec3 d = texture2D(uSampler, vTexCoord + vec2(0, off.y)).rgb;
+                    float e = distance(c, r) + distance(c, d);
+                    gl_FragColor = vec4(mix(c, vec3(0), e * 6.0), 1.0);
+                }
+            ` },
+            { id: 'rainbow', name: '무지개색', fs: `
+                void main() {
+                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
+                    vec3 rainbow = 0.5 + 0.5 * cos(uTime + vTexCoord.xyx + vec3(0,2,4));
+                    gl_FragColor = vec4(col * rainbow * 1.5, 1.0);
+                }
+            ` },
+            { id: 'neon', name: '반짝반짝', fs: `
+                void main() {
+                    vec2 off = 1.5 / uResolution;
+                    float e = distance(texture2D(uSampler, vTexCoord).rgb, texture2D(uSampler, vTexCoord+off).rgb);
+                    gl_FragColor = vec4(mix(vec3(0), vec3(0, 1, 1), step(0.1, e)), 1.0);
+                }
+            ` },
+            { id: 'invert', name: '반대색상', fs: `
+                void main() {
+                    gl_FragColor = vec4(1.0 - texture2D(uSampler, vTexCoord).rgb, 1.0);
+                }
+            ` },
+            { id: 'vhs', name: '옛날 TV', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    uv.x += sin(uv.y * 50.0 + uTime * 15.0) * 0.005;
+                    vec4 col = texture2D(uSampler, uv);
+                    gl_FragColor = vec4(col.rgb - sin(uv.y * 400.0) * 0.1, 1.0);
+                }
+            ` },
+            { id: 'wave', name: '흐물흐물', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    uv.x += sin(uv.y * 20.0 + uTime * 6.0) * 0.04;
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'dot', name: '점박이', fs: `
+                void main() {
+                    vec2 uv = vTexCoord * uResolution / 7.0;
+                    float s = sin(uv.x) * sin(uv.y);
+                    float l = dot(texture2D(uSampler, vTexCoord).rgb, vec3(0.3, 0.59, 0.11));
+                    gl_FragColor = vec4(vec3(step(1.0 - l, s)), 1.0);
+                }
+            ` },
+            { id: 'poster', name: '물감칠', fs: `
+                void main() {
+                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
+                    gl_FragColor = vec4(floor(col * 3.0) / 3.0, 1.0);
+                }
+            ` },
+            { id: 'long', name: '길쭉길쭉', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    uv.y = pow(uv.y, 1.5);
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'bighead', name: '대두효과', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    vec2 center = vec2(0.5, 0.8);
+                    vec2 dist = uv - center;
+                    float r = length(dist);
+                    if (r < 0.6) uv = center + dist * pow(r/0.6, 0.5);
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` },
+            { id: 'melting', name: '녹아내림', fs: `
+                void main() {
+                    vec2 uv = vTexCoord;
+                    uv.y += sin(uv.x * 25.0 + uTime * 5.0) * 0.03 * (1.0 - uv.y);
+                    gl_FragColor = texture2D(uSampler, uv);
+                }
+            ` }
+        ];
+
+        let programs = {};
+        let activeEffect = 'normal';
+
+        function createShader(gl, type, source) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, source);
+            gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) return null;
+            return s;
+        }
+
+        function initShaders() {
+            effects.forEach(eff => {
+                const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+                const fsSource = fsHeader + (eff.fs || `void main() { gl_FragColor = texture2D(uSampler, vTexCoord); }`);
+                const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                const p = gl.createProgram();
+                gl.attachShader(p, vs); gl.attachShader(p, fs);
+                gl.linkProgram(p);
+                programs[eff.id] = p;
+            });
+        }
+
+        const vertices = new Float32Array([-1,-1,0,1, 1,-1,1,1, -1,1,0,0, 1,1,1,0]);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+        async function startCamera() {
+            try {
+                const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 1280, height: 720 } });
+                video.srcObject = s;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    setupView.classList.add('hidden');
+                    snapBtn.disabled = false;
+                    requestAnimationFrame(render);
+                };
+            } catch (e) {
+                document.getElementById('error-log').innerText = "카메라 시작 실패: 권한을 확인하세요.";
+                document.getElementById('error-log').classList.remove('hidden');
+            }
+        }
+
+        function render(time) {
+            if (video.readyState < 2) return requestAnimationFrame(render);
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            const p = programs[activeEffect] || programs.normal;
+            gl.useProgram(p);
+
+            const pos = gl.getAttribLocation(p, "aPosition");
+            const tc = gl.getAttribLocation(p, "aTexCoord");
+            gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 16, 0);
+            gl.enableVertexAttribArray(tc); gl.vertexAttribPointer(tc, 2, gl.FLOAT, false, 16, 8);
+
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+            gl.uniform1f(gl.getUniformLocation(p, "uTime"), time * 0.001);
+            gl.uniform2f(gl.getUniformLocation(p, "uResolution"), canvas.width, canvas.height);
+
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            requestAnimationFrame(render);
+        }
+
+        function buildList() {
+            effects.forEach(eff => {
+                const card = document.createElement('div');
+                card.className = `effect-card bg-slate-800 border-2 border-transparent ${eff.id === activeEffect ? 'active' : ''}`;
+                card.innerHTML = `<span class="effect-label">${eff.name}</span>`;
+                card.onclick = () => {
+                    document.querySelectorAll('.effect-card').forEach(c => c.classList.remove('active'));
+                    card.classList.add('active');
+                    activeEffect = eff.id;
+                };
+                effectList.appendChild(card);
+            });
+        }
+
+        startBtn.onclick = startCamera;
+        snapBtn.onclick = () => {
+            let c = 3; countdownEl.innerText = c; countdownEl.classList.remove('hidden'); snapBtn.disabled = true;
+            const t = setInterval(() => {
+                c--; if (c > 0) countdownEl.innerText = c;
+                else {
+                    clearInterval(t); countdownEl.classList.add('hidden');
+                    document.getElementById('flash-overlay').classList.add('shutter-flash');
+                    setTimeout(() => {
+                        const a = document.createElement('a');
+                        a.download = `photo-${Date.now()}.png`; a.href = canvas.toDataURL(); a.click();
+                        document.getElementById('flash-overlay').classList.remove('shutter-flash');
+                        snapBtn.disabled = false;
+                    }, 100);
+                }
+            }, 800);
+        };
+
+        initShaders();
+        buildList();
+    </script>
+</body>
+</html>
