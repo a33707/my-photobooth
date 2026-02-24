@@ -6,7 +6,7 @@
     <title>가족 포토부스</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #020617; color: white; /* touch-action: none; */ min-height: 100vh; display: flex; flex-direction: column; }
+        body { background-color: #020617; color: white; touch-action: none; min-height: 100vh; display: flex; flex-direction: column; }
         .shutter-flash { animation: flash 0.4s ease-out; }
         @keyframes flash {
             0% { background: white; opacity: 1; }
@@ -68,19 +68,6 @@
             </button>
         </div>
         <div id="countdown" class="hidden text-[12rem] font-black text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl z-30"></div>
-
-        <!-- 새롭게 추가된: 사진 옵션 뷰 -->
-        <div id="photo-options-view" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex space-x-4 hidden">
-            <button id="retake-btn" class="bg-gray-700 hover:bg-gray-600 px-6 py-3 rounded-full font-bold text-white transition-all active:scale-95">
-                다시 찍기
-            </button>
-            <button id="edit-btn" class="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-full font-bold text-white transition-all active:scale-95">
-                편집하기
-            </button>
-            <button id="save-btn" class="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-full font-bold text-white transition-all active:scale-95">
-                저장하기
-            </button>
-        </div>
     </main>
 
     <!-- 20가지 효과 그리드 -->
@@ -274,7 +261,7 @@
                     gl_FragColor = texture2D(uSampler, uv);
                 }
             ` }
-        ;
+        ];
 
         let programs = {};
         let activeEffect = 'normal';
@@ -299,7 +286,7 @@
             });
         }
 
-        const vertices = new Float32Array([-1,-1,0,1, 1,-1,1,1, -1,1,0,0, 1,1,1,0);
+        const vertices = new Float32Array([-1,-1,0,1, 1,-1,1,1, -1,1,0,0, 1,1,1,0]);
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
