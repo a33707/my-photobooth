@@ -2,373 +2,387 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>가족 포토부스</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>사진 물리 실험실 📸</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #020617; color: white; touch-action: none; min-height: 100vh; display: flex; flex-direction: column; }
-        .shutter-flash { animation: flash 0.4s ease-out; }
-        @keyframes flash {
-            0% { background: white; opacity: 1; }
-            100% { background: transparent; opacity: 0; }
+        body { margin: 0; overflow: hidden; background: #050508; color: #fff; font-family: "Pretendard", -apple-system, sans-serif; }
+        canvas { display: block; touch-action: none; cursor: crosshair; }
+        .glass-ui {
+            background: rgba(15, 15, 25, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
         }
-        .effect-card {
-            transition: all 0.2s ease-in-out;
-            cursor: pointer;
-            filter: brightness(0.6);
-            border-radius: 0.75rem;
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+        .control-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.03);
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            min-height: 60px;
+            padding: 8px 4px;
         }
-        .effect-card:hover { filter: brightness(1); background-color: #1e293b; }
-        .effect-card.active { 
-            background-color: #2563eb;
-            filter: brightness(1);
-            box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+        .control-btn:active { transform: scale(0.95); }
+        .control-btn.active { 
+            background: linear-gradient(135deg, #6366f1, #a855f7); 
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
         }
-        canvas { 
-            border-radius: 1rem; 
-            width: 100%; 
-            height: auto; 
-            max-height: 72vh;
-            object-fit: contain; 
-            background: #000;
-        }
-        .effect-label { 
-            font-size: 1rem; 
-            font-weight: 800; 
-            text-align: center; 
-            color: #cbd5e1;
-            letter-spacing: -0.025em;
-        }
-        .active .effect-label { color: #ffffff; }
+        #photo-input { display: none; }
+        .label-text { font-size: 9px; color: rgba(255,255,255,0.6); margin-top: 4px; font-weight: 700; }
+        .control-btn.active .label-text { color: #fff; }
     </style>
 </head>
-<body class="p-2 md:p-4">
+<body>
 
-    <!-- 메인 화면 -->
-    <main class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
-        <div id="flash-overlay" class="absolute inset-0 z-50 pointer-events-none rounded-xl"></div>
-        
-        <div id="setup-view" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md rounded-xl p-6 text-center">
-            <button id="start-btn" class="bg-blue-600 hover:bg-blue-500 px-12 py-4 rounded-full font-bold text-white transition-all active:scale-95">
-                카메라 시작하기
-            </button>
-            <p id="error-log" class="text-red-400 mt-4 text-sm hidden"></p>
+    <!-- 상단 UI -->
+    <div class="fixed top-6 left-1/2 -translate-x-1/2 z-10 w-[95%] max-w-2xl pointer-events-none">
+        <div class="glass-ui p-5 rounded-[2.5rem] pointer-events-auto">
+            <div class="flex items-center justify-between mb-5 px-1">
+                <button onclick="document.getElementById('photo-input').click()" class="px-6 py-2.5 rounded-2xl text-sm font-black bg-white/10 hover:bg-white/20 transition-all border border-white/10 flex items-center gap-2">
+                    <span>📷</span> 사진 선택
+                </button>
+                <button onclick="resetMesh()" class="px-6 py-2.5 rounded-2xl text-sm font-black bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20">
+                    🔄 초기화
+                </button>
+            </div>
+            
+            <div class="mode-grid">
+                <button onclick="setMode('jelly')" id="btn-jelly" class="control-btn rounded-2xl active">
+                    <span class="text-xl">🍮</span><span class="label-text">젤리</span>
+                </button>
+                <button onclick="setMode('swirl')" id="btn-swirl" class="control-btn rounded-2xl">
+                    <span class="text-xl">🌀</span><span class="label-text">회오리</span>
+                </button>
+                <button onclick="setMode('bulge')" id="btn-bulge" class="control-btn rounded-2xl">
+                    <span class="text-xl">🔍</span><span class="label-text">볼록</span>
+                </button>
+                <button onclick="setMode('pinch')" id="btn-pinch" class="control-btn rounded-2xl">
+                    <span class="text-xl">🕳️</span><span class="label-text">오목</span>
+                </button>
+                <button onclick="setMode('wave')" id="btn-wave" class="control-btn rounded-2xl">
+                    <span class="text-xl">🌊</span><span class="label-text">물결</span>
+                </button>
+                <button onclick="setMode('melt')" id="btn-melt" class="control-btn rounded-2xl">
+                    <span class="text-xl">🫠</span><span class="label-text">녹음</span>
+                </button>
+                <button onclick="setMode('glitch')" id="btn-glitch" class="control-btn rounded-2xl">
+                    <span class="text-xl">📺</span><span class="label-text">노이즈</span>
+                </button>
+                <button onclick="setMode('magnet')" id="btn-magnet" class="control-btn rounded-2xl">
+                    <span class="text-xl">🧲</span><span class="label-text">자석</span>
+                </button>
+                <button onclick="setMode('liquid')" id="btn-liquid" class="control-btn rounded-2xl">
+                    <span class="text-xl">💧</span><span class="label-text">액체</span>
+                </button>
+                <button onclick="setMode('shake')" id="btn-shake" class="control-btn rounded-2xl">
+                    <span class="text-xl">🫨</span><span class="label-text">떨림</span>
+                </button>
+            </div>
         </div>
+        <input type="file" id="photo-input" accept="image/*" onchange="handleImageUpload(event)">
+    </div>
 
-        <canvas id="gl-canvas"></canvas>
-        
-        <!-- 촬영 버튼 -->
-        <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
-            <button id="snap-btn" class="bg-white text-slate-900 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-75 disabled:opacity-10" disabled>
-                <div class="w-12 h-12 rounded-full border-2 border-slate-900"></div>
-            </button>
-        </div>
-        <div id="countdown" class="hidden text-[12rem] font-black text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl z-30"></div>
-    </main>
+    <!-- 사운드 버튼 -->
+    <button onclick="toggleMute()" id="audio-toggle" class="fixed bottom-8 right-8 z-10 glass-ui w-16 h-16 rounded-full flex items-center justify-center text-3xl transition-all shadow-2xl pointer-events-auto">🔊</button>
 
-    <!-- 20가지 효과 그리드 -->
-    <section class="w-full max-w-5xl mx-auto mt-6 mb-8">
-        <div id="effect-list" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
-            <!-- 효과 버튼들이 여기에 생성됩니다 -->
-        </div>
-    </section>
-
-    <video id="video" class="hidden" autoplay playsinline muted></video>
+    <canvas id="mainCanvas"></canvas>
 
     <script>
-        const canvas = document.getElementById('gl-canvas');
-        const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
-        const video = document.getElementById('video');
-        const effectList = document.getElementById('effect-list');
-        const snapBtn = document.getElementById('snap-btn');
-        const startBtn = document.getElementById('start-btn');
-        const setupView = document.getElementById('setup-view');
-        const countdownEl = document.getElementById('countdown');
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let img = new Image();
+        let mesh = [];
+        const gridDensity = 35; // 메쉬 해상도
+        let rows, cols;
+        let isImageLoaded = false;
+        
+        let mouse = { x: 0, y: 0, px: 0, py: 0, down: false };
+        let interactionMode = 'jelly';
+        let soundEnabled = true;
+        let lastSoundTime = 0;
 
-        const vsSource = `
-            attribute vec4 aPosition;
-            attribute vec2 aTexCoord;
-            varying vec2 vTexCoord;
-            void main() { gl_Position = aPosition; vTexCoord = aTexCoord; }
-        `;
-
-        const fsHeader = `
-            precision mediump float;
-            varying vec2 vTexCoord;
-            uniform sampler2D uSampler;
-            uniform float uTime;
-            uniform vec2 uResolution;
-        `;
-
-        const effects = [
-            { id: 'normal', name: '원본' },
-            { id: 'bulge', name: '대왕 코', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    vec2 center = vec2(0.5, 0.5);
-                    vec2 dist = uv - center;
-                    float r = length(dist);
-                    if (r < 0.5) uv = center + dist * (1.0 - 0.7 * (1.0 - pow(r/0.5, 2.0)));
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'pinch', name: '홀쭉이', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    vec2 center = vec2(0.5, 0.5);
-                    vec2 dist = uv - center;
-                    float r = length(dist);
-                    if (r < 0.5) uv = center + normalize(dist) * pow(r/0.5, 1.5) * 0.5;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'twirl', name: '뱅글뱅글', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    vec2 center = vec2(0.5, 0.5);
-                    vec2 dist = uv - center;
-                    float r = length(dist);
-                    float angle = atan(dist.y, dist.x) + (0.5 - r) * 8.0;
-                    if (r < 0.5) uv = center + vec2(cos(angle), sin(angle)) * r;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'quad', name: '4개 얼굴', fs: `
-                void main() {
-                    vec2 uv = mod(vTexCoord * 2.0, 1.0);
-                    if (vTexCoord.x > 0.5) uv.x = 1.0 - uv.x;
-                    if (vTexCoord.y > 0.5) uv.y = 1.0 - uv.y;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'kaleido', name: '만화경', fs: `
-                void main() {
-                    vec2 uv = vTexCoord - 0.5;
-                    float a = atan(uv.y, uv.x);
-                    float r = length(uv);
-                    a = mod(a, 3.14159 / 3.0);
-                    a = abs(a - 3.14159 / 6.0);
-                    uv = vec2(cos(a), sin(a)) * r + 0.5;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'pixel', name: '게임세상', fs: `
-                void main() {
-                    vec2 uv = floor(vTexCoord * 40.0) / 40.0;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'thermal', name: '열감지기', fs: `
-                void main() {
-                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
-                    float l = dot(col, vec3(0.3, 0.59, 0.11));
-                    vec3 res = mix(vec3(0,0,1), vec3(1,1,0), l);
-                    res = mix(res, vec3(1,0,0), smoothstep(0.5, 1.0, l));
-                    gl_FragColor = vec4(res, 1.0);
-                }
-            ` },
-            { id: 'glitch', name: '지직지직', fs: `
-                void main() {
-                    float g = sin(uTime * 30.0) * 0.015;
-                    float r = texture2D(uSampler, vTexCoord + vec2(g, 0)).r;
-                    float b = texture2D(uSampler, vTexCoord - vec2(g, 0)).b;
-                    gl_FragColor = vec4(r, texture2D(uSampler, vTexCoord).g, b, 1.0);
-                }
-            ` },
-            { id: 'sketch', name: '그림처럼', fs: `
-                void main() {
-                    vec2 off = 1.0 / uResolution;
-                    vec3 c = texture2D(uSampler, vTexCoord).rgb;
-                    vec3 r = texture2D(uSampler, vTexCoord + vec2(off.x, 0)).rgb;
-                    vec3 d = texture2D(uSampler, vTexCoord + vec2(0, off.y)).rgb;
-                    float e = distance(c, r) + distance(c, d);
-                    gl_FragColor = vec4(mix(c, vec3(0), e * 6.0), 1.0);
-                }
-            ` },
-            { id: 'rainbow', name: '무지개색', fs: `
-                void main() {
-                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
-                    vec3 rainbow = 0.5 + 0.5 * cos(uTime + vTexCoord.xyx + vec3(0,2,4));
-                    gl_FragColor = vec4(col * rainbow * 1.5, 1.0);
-                }
-            ` },
-            { id: 'neon', name: '반짝반짝', fs: `
-                void main() {
-                    vec2 off = 1.5 / uResolution;
-                    float e = distance(texture2D(uSampler, vTexCoord).rgb, texture2D(uSampler, vTexCoord+off).rgb);
-                    gl_FragColor = vec4(mix(vec3(0), vec3(0, 1, 1), step(0.1, e)), 1.0);
-                }
-            ` },
-            { id: 'invert', name: '반대색상', fs: `
-                void main() {
-                    gl_FragColor = vec4(1.0 - texture2D(uSampler, vTexCoord).rgb, 1.0);
-                }
-            ` },
-            { id: 'vhs', name: '옛날 TV', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    uv.x += sin(uv.y * 50.0 + uTime * 15.0) * 0.005;
-                    vec4 col = texture2D(uSampler, uv);
-                    gl_FragColor = vec4(col.rgb - sin(uv.y * 400.0) * 0.1, 1.0);
-                }
-            ` },
-            { id: 'wave', name: '흐물흐물', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    uv.x += sin(uv.y * 20.0 + uTime * 6.0) * 0.04;
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'dot', name: '점박이', fs: `
-                void main() {
-                    vec2 uv = vTexCoord * uResolution / 7.0;
-                    float s = sin(uv.x) * sin(uv.y);
-                    float l = dot(texture2D(uSampler, vTexCoord).rgb, vec3(0.3, 0.59, 0.11));
-                    gl_FragColor = vec4(vec3(step(1.0 - l, s)), 1.0);
-                }
-            ` },
-            { id: 'poster', name: '물감칠', fs: `
-                void main() {
-                    vec3 col = texture2D(uSampler, vTexCoord).rgb;
-                    gl_FragColor = vec4(floor(col * 3.0) / 3.0, 1.0);
-                }
-            ` },
-            { id: 'long', name: '길쭉길쭉', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    uv.y = pow(uv.y, 1.5);
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'bighead', name: '대두효과', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    vec2 center = vec2(0.5, 0.8);
-                    vec2 dist = uv - center;
-                    float r = length(dist);
-                    if (r < 0.6) uv = center + dist * pow(r/0.6, 0.5);
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` },
-            { id: 'melting', name: '녹아내림', fs: `
-                void main() {
-                    vec2 uv = vTexCoord;
-                    uv.y += sin(uv.x * 25.0 + uTime * 5.0) * 0.03 * (1.0 - uv.y);
-                    gl_FragColor = texture2D(uSampler, uv);
-                }
-            ` }
-        ];
-
-        let programs = {};
-        let activeEffect = 'normal';
-
-        function createShader(gl, type, source) {
-            const s = gl.createShader(type);
-            gl.shaderSource(s, source);
-            gl.compileShader(s);
-            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) return null;
-            return s;
+        // --- 오디오 엔진 (FM 합성 및 리듬 간격 유지) ---
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
-        function initShaders() {
-            effects.forEach(eff => {
-                const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
-                const fsSource = fsHeader + (eff.fs || `void main() { gl_FragColor = texture2D(uSampler, vTexCoord); }`);
-                const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
-                const p = gl.createProgram();
-                gl.attachShader(p, vs); gl.attachShader(p, fs);
-                gl.linkProgram(p);
-                programs[eff.id] = p;
-            });
+        function playPhysicsSound(type, intensity) {
+            if (!soundEnabled || !audioCtx) return;
+            const now = audioCtx.currentTime;
+            
+            // 드래그 시 소리 중첩 방지를 위한 간격 (250ms)
+            const interval = 0.25; 
+            if (now - lastSoundTime < interval) return;
+            lastSoundTime = now;
+
+            const masterGain = audioCtx.createGain();
+            masterGain.connect(audioCtx.destination);
+            const vol = 0.06 * (intensity + 0.5);
+
+            const carrier = audioCtx.createOscillator();
+            const modulator = audioCtx.createOscillator();
+            const modGain = audioCtx.createGain();
+
+            carrier.type = 'sine';
+            modulator.type = 'sine';
+
+            let baseFreq = 200 + (intensity * 200);
+
+            switch(type) {
+                case 'jelly': baseFreq = 261; break;
+                case 'swirl': baseFreq = 330; modulator.type = 'sawtooth'; break;
+                case 'glitch': baseFreq = 800; carrier.type = 'square'; break;
+                case 'melt': baseFreq = 150; break;
+                case 'wave': baseFreq = 440; break;
+            }
+
+            carrier.frequency.setValueAtTime(baseFreq, now);
+            modulator.frequency.setValueAtTime(baseFreq * 1.5, now);
+            modGain.gain.setValueAtTime(baseFreq * 0.4, now);
+
+            modulator.connect(modGain);
+            modGain.connect(carrier.frequency);
+            carrier.connect(masterGain);
+
+            masterGain.gain.setValueAtTime(0, now);
+            masterGain.gain.linearRampToValueAtTime(vol, now + 0.05);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+            carrier.start(); modulator.start();
+            carrier.stop(now + 0.4); modulator.stop(now + 0.4);
         }
 
-        const vertices = new Float32Array([-1,-1,0,1, 1,-1,1,1, -1,1,0,0, 1,1,1,0]);
-        const buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        // --- 메쉬 포인트 클래스 ---
+        class Point {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.ox = x; this.oy = y; // 기준 위치
+                this.vx = 0; this.vy = 0;
+            }
+            update() {
+                // 물리 복원력 (Spring)
+                const dx = this.ox - this.x;
+                const dy = this.oy - this.y;
+                this.vx += dx * 0.07;
+                this.vy += dy * 0.07;
 
-        const tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                // 마찰력 (Damping)
+                this.vx *= 0.86;
+                this.vy *= 0.86;
 
-        async function startCamera() {
-            try {
-                const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 1280, height: 720 } });
-                video.srcObject = s;
-                video.onloadedmetadata = () => {
-                    video.play();
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    setupView.classList.add('hidden');
-                    snapBtn.disabled = false;
-                    requestAnimationFrame(render);
-                };
-            } catch (e) {
-                document.getElementById('error-log').innerText = "카메라 시작 실패: 권한을 확인하세요.";
-                document.getElementById('error-log').classList.remove('hidden');
+                this.x += this.vx;
+                this.y += this.vy;
             }
         }
 
-        function render(time) {
-            if (video.readyState < 2) return requestAnimationFrame(render);
-            gl.viewport(0, 0, canvas.width, canvas.height);
-            const p = programs[activeEffect] || programs.normal;
-            gl.useProgram(p);
+        function createMesh() {
+            mesh = [];
+            const aspect = img.width / img.height;
+            const canvasAspect = window.innerWidth / window.innerHeight;
+            
+            let displayW, displayH;
+            if (aspect > canvasAspect) {
+                displayW = window.innerWidth * 0.9;
+                displayH = displayW / aspect;
+            } else {
+                displayH = window.innerHeight * 0.65;
+                displayW = displayH * aspect;
+            }
 
-            const pos = gl.getAttribLocation(p, "aPosition");
-            const tc = gl.getAttribLocation(p, "aTexCoord");
-            gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 16, 0);
-            gl.enableVertexAttribArray(tc); gl.vertexAttribPointer(tc, 2, gl.FLOAT, false, 16, 8);
+            const startX = (window.innerWidth - displayW) / 2;
+            const startY = (window.innerHeight - displayH) / 2 + 60;
 
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-            gl.uniform1f(gl.getUniformLocation(p, "uTime"), time * 0.001);
-            gl.uniform2f(gl.getUniformLocation(p, "uResolution"), canvas.width, canvas.height);
+            cols = gridDensity;
+            rows = Math.round(gridDensity / aspect);
 
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-            requestAnimationFrame(render);
-        }
-
-        function buildList() {
-            effects.forEach(eff => {
-                const card = document.createElement('div');
-                card.className = `effect-card bg-slate-800 border-2 border-transparent ${eff.id === activeEffect ? 'active' : ''}`;
-                card.innerHTML = `<span class="effect-label">${eff.name}</span>`;
-                card.onclick = () => {
-                    document.querySelectorAll('.effect-card').forEach(c => c.classList.remove('active'));
-                    card.classList.add('active');
-                    activeEffect = eff.id;
-                };
-                effectList.appendChild(card);
-            });
-        }
-
-        startBtn.onclick = startCamera;
-        snapBtn.onclick = () => {
-            let c = 3; countdownEl.innerText = c; countdownEl.classList.remove('hidden'); snapBtn.disabled = true;
-            const t = setInterval(() => {
-                c--; if (c > 0) countdownEl.innerText = c;
-                else {
-                    clearInterval(t); countdownEl.classList.add('hidden');
-                    document.getElementById('flash-overlay').classList.add('shutter-flash');
-                    setTimeout(() => {
-                        const a = document.createElement('a');
-                        a.download = `photo-${Date.now()}.png`; a.href = canvas.toDataURL(); a.click();
-                        document.getElementById('flash-overlay').classList.remove('shutter-flash');
-                        snapBtn.disabled = false;
-                    }, 100);
+            for (let r = 0; r <= rows; r++) {
+                for (let c = 0; c <= cols; c++) {
+                    mesh.push(new Point(startX + (c / cols) * displayW, startY + (r / rows) * displayH));
                 }
-            }, 800);
+            }
+        }
+
+        function resetMesh() { if (isImageLoaded) createMesh(); }
+
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            initAudio();
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                img = new Image();
+                img.onload = () => { isImageLoaded = true; createMesh(); };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setMode(m) {
+            interactionMode = m;
+            document.querySelectorAll('.control-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + m).classList.add('active');
+            initAudio();
+        }
+
+        function toggleMute() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('audio-toggle').textContent = soundEnabled ? '🔊' : '🔇';
+        }
+
+        // --- 물리 상호작용 로직 ---
+        function applyPhysics() {
+            if (!isImageLoaded) return;
+
+            const moveX = mouse.x - mouse.px;
+            const moveY = mouse.y - mouse.py;
+            const speed = Math.sqrt(moveX * moveX + moveY * moveY);
+
+            mesh.forEach(p => {
+                const dx = mouse.x - p.x;
+                const dy = mouse.y - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const radius = 160;
+
+                if (dist < radius && mouse.down) {
+                    const force = (radius - dist) / radius;
+                    
+                    switch(interactionMode) {
+                        case 'jelly':
+                            p.vx += moveX * force * 1.3;
+                            p.vy += moveY * force * 1.3;
+                            break;
+                        case 'swirl':
+                            const angle = 0.4 * force;
+                            const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
+                            const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
+                            p.vx += (mouse.x - rx - p.x) * 0.7;
+                            p.vy += (mouse.y - ry - p.y) * 0.7;
+                            break;
+                        case 'bulge':
+                            p.vx -= (dx / dist) * force * 18;
+                            p.vy -= (dy / dist) * force * 18;
+                            break;
+                        case 'pinch':
+                            p.vx += (dx / dist) * force * 18;
+                            p.vy += (dy / dist) * force * 18;
+                            break;
+                        case 'wave':
+                            const w = Math.sin(dist * 0.1 - Date.now() * 0.015) * 12 * force;
+                            p.vy += w;
+                            break;
+                        case 'melt':
+                            p.vy += force * 22;
+                            break;
+                        case 'glitch':
+                            p.vx += (Math.random() - 0.5) * 40 * force;
+                            p.vy += (Math.random() - 0.5) * 40 * force;
+                            break;
+                        case 'magnet':
+                            p.vx += (mouse.x - p.x) * 0.15 * force;
+                            p.vy += (mouse.y - p.y) * 0.15 * force;
+                            break;
+                        case 'liquid':
+                            p.vx += moveX * force * 2.0;
+                            p.vy += moveY * force * 2.0;
+                            p.vx += (Math.random() - 0.5) * 5;
+                            break;
+                        case 'shake':
+                            p.vx += (Math.random() - 0.5) * 25;
+                            p.vy += (Math.random() - 0.5) * 25;
+                            break;
+                    }
+                    if (speed > 2) playPhysicsSound(interactionMode, speed / 40);
+                }
+            });
+
+            mouse.px = mouse.x; mouse.py = mouse.y;
+        }
+
+        // --- 렌더링 시스템 (삼각형 메쉬 드로잉) ---
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!isImageLoaded) {
+                ctx.fillStyle = "rgba(255,255,255,0.2)";
+                ctx.textAlign = "center"; ctx.font = "700 20px Pretendard";
+                ctx.fillText("📷 소중한 사진을 업로드해 보세요", canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const i = r * (cols + 1) + c;
+                    const p1 = mesh[i], p2 = mesh[i + 1], p3 = mesh[i + cols + 1], p4 = mesh[i + cols + 2];
+                    const u1 = (c / cols) * img.width, v1 = (r / rows) * img.height;
+                    const u2 = ((c + 1) / cols) * img.width, v2 = ((r + 1) / rows) * img.height;
+
+                    // Affine Transform 기반 삼각형 매핑
+                    drawTriangle(p1, p2, p3, u1, v1, u2, v1, u1, v2);
+                    drawTriangle(p2, p4, p3, u2, v1, u2, v2, u1, v2);
+                }
+            }
+        }
+
+        function drawTriangle(p1, p2, p3, u1, v1, u2, v2, u3, v3) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+            ctx.closePath(); ctx.clip();
+
+            const m1 = p1.x, m2 = p1.y, m3 = p2.x, m4 = p2.y, m5 = p3.x, m6 = p3.y;
+            const t1 = u1, t2 = v1, t3 = u2, t4 = v2, t5 = u3, t6 = v3;
+            const d = t1 * (t4 - t6) + t3 * (t6 - t2) + t5 * (t2 - t4);
+            const a = (m1 * (t4 - t6) + m3 * (t6 - t2) + m5 * (t2 - t4)) / d;
+            const b = (m2 * (t4 - t6) + m4 * (t6 - t2) + m6 * (t2 - t4)) / d;
+            const c = (m1 * (t5 - t3) + m3 * (t1 - t5) + m5 * (t3 - t1)) / d;
+            const e = (m2 * (t5 - t3) + m4 * (t1 - t5) + m6 * (t3 - t1)) / d;
+            const g = (m1 * (t3 * t6 - t5 * t4) + m3 * (t5 * t2 - t1 * t6) + m5 * (t1 * t4 - t3 * t2)) / d;
+            const h = (m2 * (t3 * t6 - t5 * t4) + m4 * (t5 * t2 - t1 * t6) + m6 * (t1 * t4 - t3 * t2)) / d;
+
+            ctx.setTransform(a, b, c, e, g, h);
+            ctx.drawImage(img, 0, 0);
+            ctx.restore();
+        }
+
+        function animate() {
+            applyPhysics();
+            mesh.forEach(p => p.update());
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        // --- 인터랙션 이벤트 핸들러 ---
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            if (isImageLoaded) createMesh();
+        });
+
+        const updateMouse = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+            const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+            mouse.x = x; mouse.y = y;
         };
 
-        initShaders();
-        buildList();
+        canvas.addEventListener('mousedown', (e) => { mouse.down = true; updateMouse(e); initAudio(); });
+        canvas.addEventListener('mousemove', updateMouse);
+        window.addEventListener('mouseup', () => mouse.down = false);
+        canvas.addEventListener('touchstart', (e) => { mouse.down = true; updateMouse(e); initAudio(); e.preventDefault(); }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => { updateMouse(e); e.preventDefault(); }, {passive: false});
+        canvas.addEventListener('touchend', () => mouse.down = false);
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        animate();
     </script>
 </body>
 </html>
