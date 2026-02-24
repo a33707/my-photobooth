@@ -77,6 +77,65 @@
         </div>
     </section>
 
+    <!-- 편집 화면 -->
+    <div id="editor-view" class="fixed inset-0 z-50 bg-slate-950 flex flex-col hidden">
+        <!-- 상단 바 -->
+        <header class="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">
+            <button id="editor-close" class="text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+            <h2 class="text-lg font-bold">사진 편집</h2>
+            <button id="editor-save" class="bg-blue-600 text-white px-6 py-2 rounded-full font-bold hover:bg-blue-500 transition-colors">
+                저장
+            </button>
+        </header>
+
+        <!-- 캔버스 영역 -->
+        <div class="flex-1 flex items-center justify-center p-4 overflow-hidden bg-black relative">
+            <canvas id="editor-canvas" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"></canvas>
+        </div>
+
+        <!-- 하단 툴바 -->
+        <div class="bg-slate-900 border-t border-slate-800 pb-safe">
+            <!-- 툴 패널 -->
+            <div id="tool-panels" class="p-4 h-32 overflow-y-auto">
+
+                <!-- 필터 패널 -->
+                <div id="panel-filter" class="flex gap-4 overflow-x-auto pb-2">
+                    <!-- JS로 채워짐 -->
+                </div>
+
+                <!-- 스티커 패널 -->
+                <div id="panel-sticker" class="hidden flex flex-wrap gap-4 justify-center">
+                    <!-- JS로 채워짐 -->
+                </div>
+
+                <!-- 그리기 패널 -->
+                <div id="panel-draw" class="hidden flex flex-col gap-3 items-center">
+                    <div class="flex gap-4">
+                        <input type="color" id="brush-color" value="#ffffff" class="w-10 h-10 rounded cursor-pointer bg-transparent">
+                        <input type="range" id="brush-size" min="1" max="20" value="5" class="w-48">
+                    </div>
+                    <button id="undo-draw" class="text-sm text-slate-400 hover:text-white flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        되돌리기
+                    </button>
+                </div>
+            </div>
+
+            <!-- 탭 메뉴 -->
+            <div class="flex justify-around items-center border-t border-slate-800">
+                <button class="tool-tab flex-1 py-4 text-center font-bold text-slate-400 hover:text-white transition-colors active" data-target="panel-filter">필터</button>
+                <button class="tool-tab flex-1 py-4 text-center font-bold text-slate-400 hover:text-white transition-colors" data-target="panel-sticker">스티커</button>
+                <button class="tool-tab flex-1 py-4 text-center font-bold text-slate-400 hover:text-white transition-colors" data-target="panel-draw">그리기</button>
+            </div>
+        </div>
+    </div>
+
     <video id="video" class="hidden" autoplay playsinline muted></video>
 
     <script>
@@ -88,6 +147,20 @@
         const startBtn = document.getElementById('start-btn');
         const setupView = document.getElementById('setup-view');
         const countdownEl = document.getElementById('countdown');
+
+        // 에디터 관련 요소
+        const editorView = document.getElementById('editor-view');
+        const editorCanvas = document.getElementById('editor-canvas');
+        const editorCtx = editorCanvas.getContext('2d');
+        const toolTabs = document.querySelectorAll('.tool-tab');
+        const toolPanels = document.querySelectorAll('#tool-panels > div');
+
+        let originalImage = null; // 원본 이미지 저장용
+        let currentFilter = 'none';
+        let stickers = []; // {x, y, text, size}
+        let drawingPaths = []; // [{points: [{x, y}], color, size}]
+        let isDrawing = false;
+        let activeTool = 'filter'; // filter, sticker, draw
 
         const vsSource = `
             attribute vec4 aPosition;
@@ -380,6 +453,8 @@
         }
 
         startBtn.onclick = startCamera;
+
+        // 촬영 버튼 클릭
         snapBtn.onclick = () => {
             let c = 3; countdownEl.innerText = c; countdownEl.classList.remove('hidden'); snapBtn.disabled = true;
             const t = setInterval(() => {
@@ -387,15 +462,263 @@
                 else {
                     clearInterval(t); countdownEl.classList.add('hidden');
                     document.getElementById('flash-overlay').classList.add('shutter-flash');
+
                     setTimeout(() => {
-                        const a = document.createElement('a');
-                        a.download = `photo-${Date.now()}.png`; a.href = canvas.toDataURL(); a.click();
+                        openEditor();
                         document.getElementById('flash-overlay').classList.remove('shutter-flash');
                         snapBtn.disabled = false;
                     }, 100);
                 }
             }, 800);
         };
+
+        // 에디터 열기
+        function openEditor() {
+            // WebGL 캔버스 크기에 맞춰 에디터 캔버스 설정
+            editorCanvas.width = canvas.width;
+            editorCanvas.height = canvas.height;
+
+            // 현재 WebGL 캔버스 내용을 이미지로 저장
+            originalImage = new Image();
+            originalImage.src = canvas.toDataURL();
+            originalImage.onload = () => {
+                renderEditor();
+                editorView.classList.remove('hidden');
+            };
+
+            // 초기화
+            stickers = [];
+            drawingPaths = [];
+            currentFilter = 'none';
+        }
+
+        // 에디터 닫기
+        document.getElementById('editor-close').onclick = () => {
+            if(confirm('편집한 내용이 사라집니다. 나가시겠습니까?')) {
+                editorView.classList.add('hidden');
+            }
+        };
+
+        // 탭 전환 로직
+        toolTabs.forEach(tab => {
+            tab.onclick = () => {
+                // UI 업데이트
+                toolTabs.forEach(t => {
+                    t.classList.remove('active', 'text-white');
+                    t.classList.add('text-slate-400');
+                });
+                tab.classList.add('active', 'text-white');
+                tab.classList.remove('text-slate-400');
+
+                // 패널 전환
+                const targetId = tab.dataset.target;
+                toolPanels.forEach(p => {
+                    if(p.id === targetId) p.classList.remove('hidden');
+                    else p.classList.add('hidden');
+
+                    if (targetId === 'panel-draw') p.classList.add('flex');
+                    else p.classList.remove('flex');
+
+                    if (targetId === 'panel-sticker') p.classList.add('flex');
+                });
+
+                activeTool = targetId.split('-')[1]; // filter, sticker, draw
+            };
+        });
+
+        // 필터 목록 초기화
+        const filters = [
+            { name: '원본', value: 'none' },
+            { name: '흑백', value: 'grayscale(100%)' },
+            { name: '세피아', value: 'sepia(100%)' },
+            { name: '밝게', value: 'brightness(120%)' },
+            { name: '어둡게', value: 'brightness(80%)' },
+            { name: '대비', value: 'contrast(150%)' },
+            { name: '채도', value: 'saturate(200%)' },
+            { name: '빈티지', value: 'sepia(50%) contrast(120%)' },
+            { name: '차가움', value: 'hue-rotate(180deg)' }
+        ];
+        const filterPanel = document.getElementById('panel-filter');
+        filters.forEach(f => {
+            const btn = document.createElement('button');
+            btn.className = "flex-shrink-0 px-4 py-2 bg-slate-800 rounded-full text-sm font-bold hover:bg-slate-700 transition-colors border border-slate-700";
+            btn.innerText = f.name;
+            btn.onclick = () => {
+                currentFilter = f.value;
+                document.querySelectorAll('#panel-filter button').forEach(b => b.classList.remove('bg-blue-600', 'text-white'));
+                btn.classList.add('bg-blue-600', 'text-white');
+                renderEditor();
+            };
+            if(f.value === 'none') btn.classList.add('bg-blue-600', 'text-white');
+            filterPanel.appendChild(btn);
+        });
+
+        // 저장 버튼 로직
+        document.getElementById('editor-save').onclick = () => {
+            const link = document.createElement('a');
+            link.download = `edited-photo-${Date.now()}.png`;
+            link.href = editorCanvas.toDataURL();
+            link.click();
+        };
+
+        // 스티커 목록 초기화
+        const emojis = ['😊', '😂', '😍', '😎', '😭', '😡', '👍', '👎', '🎉', '❤️', '⭐', '🔥', '🐶', '🐱', '🐰', '👑', '🎀', '🎈', '🎵', '💡'];
+        const stickerPanel = document.getElementById('panel-sticker');
+        emojis.forEach(emoji => {
+            const btn = document.createElement('button');
+            btn.className = "text-4xl hover:scale-125 transition-transform p-2";
+            btn.innerText = emoji;
+            btn.onclick = () => {
+                stickers.push({
+                    text: emoji,
+                    x: editorCanvas.width / 2,
+                    y: editorCanvas.height / 2,
+                    size: 100
+                });
+                renderEditor();
+            };
+            stickerPanel.appendChild(btn);
+        });
+
+        // 그리기 도구 설정
+        const brushColorInput = document.getElementById('brush-color');
+        const brushSizeInput = document.getElementById('brush-size');
+        const undoDrawBtn = document.getElementById('undo-draw');
+
+        undoDrawBtn.onclick = () => {
+            drawingPaths.pop();
+            renderEditor();
+        };
+
+        // 캔버스 이벤트 핸들링 (그리기 및 스티커 드래그)
+        let isDraggingSticker = false;
+        let draggedStickerIndex = -1;
+        let lastX = 0, lastY = 0;
+
+        function getCanvasCoordinates(e) {
+            const rect = editorCanvas.getBoundingClientRect();
+            const scaleX = editorCanvas.width / rect.width;
+            const scaleY = editorCanvas.height / rect.height;
+
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function handleStart(e) {
+            e.preventDefault();
+            const pos = getCanvasCoordinates(e);
+
+            if (activeTool === 'draw') {
+                isDrawing = true;
+                drawingPaths.push({
+                    color: brushColorInput.value,
+                    size: parseInt(brushSizeInput.value),
+                    points: [{x: pos.x, y: pos.y}]
+                });
+            } else if (activeTool === 'sticker') {
+                // 스티커 선택 (역순으로 검색하여 맨 위에 있는 스티커 선택)
+                for (let i = stickers.length - 1; i >= 0; i--) {
+                    const s = stickers[i];
+                    // 간단한 히트 박스 (중심 기준 반경 50 정도)
+                    const dx = pos.x - s.x;
+                    const dy = pos.y - s.y;
+                    if (dx*dx + dy*dy < 2500) { // 50*50
+                        isDraggingSticker = true;
+                        draggedStickerIndex = i;
+                        lastX = pos.x;
+                        lastY = pos.y;
+                        break;
+                    }
+                }
+            }
+            renderEditor();
+        }
+
+        function handleMove(e) {
+            e.preventDefault();
+            const pos = getCanvasCoordinates(e);
+
+            if (activeTool === 'draw' && isDrawing) {
+                const currentPath = drawingPaths[drawingPaths.length - 1];
+                currentPath.points.push({x: pos.x, y: pos.y});
+                renderEditor();
+            } else if (activeTool === 'sticker' && isDraggingSticker) {
+                const s = stickers[draggedStickerIndex];
+                s.x += pos.x - lastX;
+                s.y += pos.y - lastY;
+                lastX = pos.x;
+                lastY = pos.y;
+                renderEditor();
+            }
+        }
+
+        function handleEnd(e) {
+            e.preventDefault();
+            isDrawing = false;
+            isDraggingSticker = false;
+            draggedStickerIndex = -1;
+        }
+
+        editorCanvas.addEventListener('mousedown', handleStart);
+        editorCanvas.addEventListener('mousemove', handleMove);
+        editorCanvas.addEventListener('mouseup', handleEnd);
+        editorCanvas.addEventListener('mouseout', handleEnd);
+
+        editorCanvas.addEventListener('touchstart', handleStart);
+        editorCanvas.addEventListener('touchmove', handleMove);
+        editorCanvas.addEventListener('touchend', handleEnd);
+
+
+        // 에디터 렌더링 루프
+        function renderEditor() {
+            if (!originalImage) return;
+
+            // 1. 캔버스 초기화
+            editorCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
+
+            // 2. 필터 적용 및 원본 이미지 그리기
+            editorCtx.filter = currentFilter;
+            editorCtx.drawImage(originalImage, 0, 0);
+            editorCtx.filter = 'none'; // 이후 그리기에 영향 안 주도록 초기화
+
+            // 3. 스티커 그리기
+            editorCtx.textAlign = "center";
+            editorCtx.textBaseline = "middle";
+            stickers.forEach(s => {
+                editorCtx.save();
+                editorCtx.translate(s.x, s.y);
+                editorCtx.font = `${s.size}px serif`;
+                editorCtx.fillText(s.text, 0, 0);
+                editorCtx.restore();
+            });
+
+            // 4. 그리기 경로 그리기
+            editorCtx.lineCap = 'round';
+            editorCtx.lineJoin = 'round';
+            drawingPaths.forEach(path => {
+                editorCtx.beginPath();
+                editorCtx.strokeStyle = path.color;
+                editorCtx.lineWidth = path.size;
+                if (path.points.length > 0) {
+                    editorCtx.moveTo(path.points[0].x, path.points[0].y);
+                    for (let i = 1; i < path.points.length; i++) {
+                        editorCtx.lineTo(path.points[i].x, path.points[i].y);
+                    }
+                    editorCtx.stroke();
+                }
+            });
+        }
 
         initShaders();
         buildList();
