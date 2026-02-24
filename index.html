@@ -270,7 +270,11 @@
             const s = gl.createShader(type);
             gl.shaderSource(s, source);
             gl.compileShader(s);
-            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) return null;
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(s));
+                gl.deleteShader(s);
+                return null;
+            }
             return s;
         }
 
@@ -279,10 +283,29 @@
                 const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
                 const fsSource = fsHeader + (eff.fs || `void main() { gl_FragColor = texture2D(uSampler, vTexCoord); }`);
                 const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+                if (!vs || !fs) {
+                    console.error(`Failed to compile shader for effect: ${eff.id}`);
+                    return;
+                }
+
                 const p = gl.createProgram();
                 gl.attachShader(p, vs); gl.attachShader(p, fs);
                 gl.linkProgram(p);
-                programs[eff.id] = p;
+
+                if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+                    console.error(`Failed to link program for effect: ${eff.id}`, gl.getProgramInfoLog(p));
+                    gl.deleteProgram(p);
+                    return;
+                }
+
+                programs[eff.id] = {
+                    program: p,
+                    aPosition: gl.getAttribLocation(p, "aPosition"),
+                    aTexCoord: gl.getAttribLocation(p, "aTexCoord"),
+                    uTime: gl.getUniformLocation(p, "uTime"),
+                    uResolution: gl.getUniformLocation(p, "uResolution")
+                };
             });
         }
 
@@ -318,18 +341,25 @@
         function render(time) {
             if (video.readyState < 2) return requestAnimationFrame(render);
             gl.viewport(0, 0, canvas.width, canvas.height);
-            const p = programs[activeEffect] || programs.normal;
-            gl.useProgram(p);
 
-            const pos = gl.getAttribLocation(p, "aPosition");
-            const tc = gl.getAttribLocation(p, "aTexCoord");
-            gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 16, 0);
-            gl.enableVertexAttribArray(tc); gl.vertexAttribPointer(tc, 2, gl.FLOAT, false, 16, 8);
+            let progData = programs[activeEffect];
+            if (!progData) progData = programs['normal'];
+            if (!progData) return requestAnimationFrame(render);
+
+            const { program, aPosition, aTexCoord, uTime, uResolution } = progData;
+            gl.useProgram(program);
+
+            gl.enableVertexAttribArray(aPosition);
+            gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
+
+            gl.enableVertexAttribArray(aTexCoord);
+            gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
 
             gl.bindTexture(gl.TEXTURE_2D, tex);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-            gl.uniform1f(gl.getUniformLocation(p, "uTime"), time * 0.001);
-            gl.uniform2f(gl.getUniformLocation(p, "uResolution"), canvas.width, canvas.height);
+
+            if (uTime) gl.uniform1f(uTime, time * 0.001);
+            if (uResolution) gl.uniform2f(uResolution, canvas.width, canvas.height);
 
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             requestAnimationFrame(render);
