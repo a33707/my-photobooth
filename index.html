@@ -49,7 +49,7 @@
 <body class="p-2 md:p-4">
 
     <!-- 메인 화면 -->
-    <main class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
+    <main id="camera-view" class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
         <div id="flash-overlay" class="absolute inset-0 z-50 pointer-events-none rounded-xl"></div>
         
         <div id="setup-view" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md rounded-xl p-6 text-center">
@@ -63,7 +63,7 @@
         
         <!-- 촬영 버튼 -->
         <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
-            <button id="snap-btn" class="bg-white text-slate-900 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-75 disabled:opacity-10" disabled>
+            <button id="snap-btn" aria-label="사진 촬영" class="bg-white text-slate-900 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-75 disabled:opacity-10" disabled>
                 <div class="w-12 h-12 rounded-full border-2 border-slate-900"></div>
             </button>
         </div>
@@ -71,22 +71,22 @@
     </main>
 
     <!-- 20가지 효과 그리드 -->
-    <section class="w-full max-w-5xl mx-auto mt-6 mb-8">
+    <section id="effects-view" class="w-full max-w-5xl mx-auto mt-6 mb-8">
         <div id="effect-list" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
             <!-- 효과 버튼들이 여기에 생성됩니다 -->
         </div>
     </section>
 
     <!-- 편집 화면 -->
-    <div id="editor-view" class="fixed inset-0 z-50 bg-slate-950 flex flex-col hidden">
+    <div id="editor-view" role="dialog" aria-modal="true" aria-labelledby="editor-heading" tabindex="-1" class="fixed inset-0 z-50 bg-slate-950 flex flex-col hidden">
         <!-- 상단 바 -->
         <header class="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">
-            <button id="editor-close" class="text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+            <button id="editor-close" aria-label="편집기 닫기" class="text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                 </svg>
             </button>
-            <h2 class="text-lg font-bold">사진 편집</h2>
+            <h2 id="editor-heading" class="text-lg font-bold">사진 편집</h2>
             <button id="editor-save" class="bg-blue-600 text-white px-6 py-2 rounded-full font-bold hover:bg-blue-500 transition-colors">
                 저장
             </button>
@@ -150,6 +150,10 @@
 
         // 에디터 관련 요소
         const editorView = document.getElementById('editor-view');
+        const editorClose = document.getElementById('editor-close');
+        const backgroundViews = [document.getElementById('camera-view'), document.getElementById('effects-view')];
+        let editorTrigger = null;
+        let previousInertStates = [];
         const editorCanvas = document.getElementById('editor-canvas');
         const editorCtx = editorCanvas.getContext('2d');
         const toolTabs = document.querySelectorAll('.tool-tab');
@@ -456,6 +460,7 @@
 
         // 촬영 버튼 클릭
         snapBtn.onclick = () => {
+            editorTrigger = snapBtn;
             let c = 3; countdownEl.innerText = c; countdownEl.classList.remove('hidden'); snapBtn.disabled = true;
             const t = setInterval(() => {
                 c--; if (c > 0) countdownEl.innerText = c;
@@ -480,11 +485,14 @@
 
             // 현재 WebGL 캔버스 내용을 이미지로 저장
             originalImage = new Image();
-            originalImage.src = canvas.toDataURL();
             originalImage.onload = () => {
                 renderEditor();
+                previousInertStates = backgroundViews.map(view => view.inert);
+                backgroundViews.forEach(view => { view.inert = true; });
                 editorView.classList.remove('hidden');
+                editorClose.focus();
             };
+            originalImage.src = canvas.toDataURL();
 
             // 초기화
             stickers = [];
@@ -493,11 +501,53 @@
         }
 
         // 에디터 닫기
-        document.getElementById('editor-close').onclick = () => {
-            if(confirm('편집한 내용이 사라집니다. 나가시겠습니까?')) {
-                editorView.classList.add('hidden');
+        function closeEditor() {
+            if (editorView.classList.contains('hidden')) return;
+            if (!confirm('편집한 내용이 사라집니다. 나가시겠습니까?')) return;
+
+            editorView.classList.add('hidden');
+            backgroundViews.forEach((view, index) => { view.inert = previousInertStates[index]; });
+            if (editorTrigger && editorTrigger.isConnected && !editorTrigger.disabled) {
+                editorTrigger.focus();
             }
-        };
+            editorTrigger = null;
+        }
+
+        editorClose.onclick = closeEditor;
+
+        function getEditorFocusableElements() {
+            const selector = 'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]';
+            return [...editorView.querySelectorAll(selector)].filter(element =>
+                element.tabIndex >= 0 && !element.matches(':disabled') &&
+                !element.closest('[inert]') && element.getClientRects().length > 0 &&
+                getComputedStyle(element).visibility !== 'hidden'
+            );
+        }
+
+        editorView.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeEditor();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+
+            const items = getEditorFocusableElements();
+            const current = document.activeElement;
+            if (!items.length) {
+                event.preventDefault();
+                editorView.focus();
+            } else if (!items.includes(current)) {
+                event.preventDefault();
+                (event.shiftKey ? items[items.length - 1] : items[0]).focus();
+            } else if (event.shiftKey && current === items[0]) {
+                event.preventDefault();
+                items[items.length - 1].focus();
+            } else if (!event.shiftKey && current === items[items.length - 1]) {
+                event.preventDefault();
+                items[0].focus();
+            }
+        });
 
         // 탭 전환 로직
         toolTabs.forEach(tab => {
